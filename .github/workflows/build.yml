@@ -65,16 +65,39 @@ jobs:
           CLANG_VER=$(grep -oP 'clang-r\d+\w?' kernel/build.config.common | head -1)
           echo "Kernel wants clang: $CLANG_VER"
           mkdir -p toolchain
-          git clone --depth=1 \
-            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
-            toolchain/clang-src
-          if [ ! -d "toolchain/clang-src/$CLANG_VER" ]; then
-            echo "Clang $CLANG_VER not found. Available:"
-            ls toolchain/clang-src/ | grep clang-r
-            exit 1
-          fi
-          echo "CLANG_PATH=$PWD/toolchain/clang-src/$CLANG_VER/bin" >> $GITHUB_ENV
-
+          
+          # Try multiple known branches that historically contained older clang versions
+          BRANCHES=(
+            "android12-release"
+            "android12L-release"
+            "android-12.0.0_r1"
+            "master-kernel-build-2022"
+            "master-kernel-build-2021"
+            "main-kernel-build-2024"
+            "main"
+          )
+          
+          for BRANCH in "${BRANCHES[@]}"; do
+            echo "=== Trying branch: $BRANCH ==="
+            rm -rf toolchain/clang-src
+            if git clone --depth=1 --branch "$BRANCH" \
+                 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
+                 toolchain/clang-src 2>/dev/null; then
+              if [ -d "toolchain/clang-src/$CLANG_VER" ]; then
+                echo "Found $CLANG_VER on branch $BRANCH"
+                echo "CLANG_PATH=$PWD/toolchain/clang-src/$CLANG_VER/bin" >> $GITHUB_ENV
+                exit 0
+              else
+                echo "Branch $BRANCH doesn't contain $CLANG_VER"
+              fi
+            else
+              echo "Branch $BRANCH doesn't exist"
+            fi
+          done
+          
+          echo "ERROR: $CLANG_VER not found on any known branch"
+          exit 1
+          
       - name: Build kernel
         working-directory: kernel
         run: |
